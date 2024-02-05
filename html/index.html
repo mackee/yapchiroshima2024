@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebAuthn Demo</title>
+    <link href="https://cdn.jsdelivr.net/npm/beercss@3.4.12/dist/cdn/beer.min.css" rel="stylesheet">
+</head>
+<body class="dark">
+  <main class="responsive">
+    <header>
+      <nav>
+        <h5 class="max">WebAuthn Demo</h5>
+      </nav>
+    </header>
+    <article id="username-info" style="display: none;">
+      <h2>Account</h2>
+      <p>Username: <span id="username"></span></p>
+      <button type="button" id="logout-button">Logout</button>
+    </article>
+    <article>
+      <h2>Register</h2>
+      <form>
+        <button type="button" data-ui="#register-dialog">Register</button>
+      </form>
+      <dialog class="medium" id="register-dialog">
+        <h5>Register</h5>
+        <form>
+          <div class="field border">
+            <input type="text" placeholder="Username" id="username-input" required>
+          </div>
+          <button type="button" class="border" data-ui="#register-dialog">Cancel</button>
+          <button type="button" id="register-button" data-ui="#register-dialog">Register</button>
+        </form>
+      </dialog>
+    </article>
+    <article>
+      <h2>Login</h2>
+      <form>
+        <button type="button" id="login-button">Login</button>
+      </form>
+    </article>
+  </main>
+
+  <script type="module" src="https://cdn.jsdelivr.net/npm/beercss@3.4.12/dist/cdn/beer.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/material-dynamic-colors@1.1.0/dist/cdn/material-dynamic-colors.min.js"></script>
+  <script>
+    async function createCredDefaultArgs(username) {
+      const res = await fetch("/register/challenge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username }),
+      })
+      const { challenge, userId, rpId } = await res.json()
+      return {
+        publicKey: {
+          rp: {
+            id: rpId,
+            name: "WebAuthn Demo",
+          },
+          user: {
+            id: new Uint8Array(atob(userId).split("").map((c) => c.charCodeAt(0))).buffer,
+            name: username,
+            displayName: username,
+          },
+          pubKeyCredParams: [
+            {
+              type: "public-key",
+              alg: -7,
+            },
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "preferred",
+          },
+          timeout: 60000,
+          attestation: "direct",
+
+          challenge: new Uint8Array(atob(challenge).split("").map((c) => c.charCodeAt(0))).buffer,
+        },
+      }
+    }
+    async function register(username) {
+      const credential = await navigator.credentials.create(await createCredDefaultArgs(username))
+      const credentialData = credential.response
+      const attestationObject = credentialData.attestationObject
+      const clientDataJSON = credentialData.clientDataJSON
+      const response = {
+        id: credential.id,
+        attestationObject: base64Encode(attestationObject),
+        clientDataJSON: base64Encode(clientDataJSON),
+      }
+      const res = await fetch('/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(response)
+      })
+    }
+    async function getCredentialDefaultArgs() {
+      const res = await fetch("/login/challenge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      })
+      const { challenge } = await res.json()
+      return {
+        publicKey: {
+          userVerification: "preferred",
+          challenge: new Uint8Array(atob(challenge).split("").map((c) => c.charCodeAt(0))).buffer,
+        },
+      }
+    }
+    async function login() {
+      const credential = await navigator.credentials.get(await getCredentialDefaultArgs())
+      const credentialData = credential.response
+      const authenticatorData = credentialData.authenticatorData
+      const clientDataJSON = credentialData.clientDataJSON
+      const signature = credentialData.signature
+      const userHandle = credentialData.userHandle
+      const response = {
+        id: credential.id,
+        authenticatorData: base64Encode(authenticatorData),
+        clientDataJSON: base64Encode(clientDataJSON),
+        signature: base64Encode(signature),
+      }
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(response)
+      })
+      await fetchWhoami()
+    }
+    async function logout() {
+      const res = await fetch('/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+      })
+        document.querySelector("#username").innerText = ""
+        document.querySelector("#username-info").style.display = "none"
+    }
+    async function whoami() {
+      const res = await fetch('/whoami')
+      const data = await res.json()
+      return data
+    }
+    async function fetchWhoami() {
+      const res = await whoami()
+      console.log(res)
+      if (res.logged_in) {
+        document.querySelector("#username").innerText = res.username
+        document.querySelector("#username-info").style.display = "block"
+      }
+      return res
+    }
+    function base64Encode(buffer) {
+      return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)))
+    }
+    document.addEventListener("DOMContentLoaded", async () => {
+      document.querySelector("#register-button").addEventListener("click", async () => {
+        const username = document.querySelector("#username-input").value
+        await register(username)
+      })
+      document.querySelector("#login-button").addEventListener("click", async () => {
+        await login()
+      })
+      document.querySelector("#logout-button").addEventListener("click", async () => {
+        await logout()
+      })
+      await fetchWhoami()
+    })
+  </script>
+</body>
+</html>
